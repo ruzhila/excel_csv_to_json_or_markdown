@@ -19,29 +19,29 @@ func main() {
 		fmt.Println("Usage: csv2md <input-file> <output-file>")
 		return
 	}
-	inputFile := os.Args[1]
 	outputFile := os.Args[2]
-
-	records, err := readRecords(inputFile)
+	records, err := readRecords(os.Args[1])
 	if err != nil {
 		panic(err)
 	}
 
+	var data []byte
 	switch filepath.Ext(outputFile) {
 	case ".json":
-		err = writeJSON(records, outputFile)
+		data, err = json.MarshalIndent(records, "", "  ")
 	case ".md":
-		err = writeMarkdown(records, outputFile)
+		data, err = buildMarkdown(records)
 	default:
 		fmt.Println("Unsupported output file format")
 		return
 	}
-
+	if err == nil {
+		err = os.WriteFile(outputFile, data, 0644)
+	}
 	if err != nil {
 		panic(err)
 	}
 }
-
 func readRecords(inputFile string) ([]Record, error) {
 	var records []Record
 	file, err := os.Open(inputFile)
@@ -77,12 +77,10 @@ func readRecords(inputFile string) ([]Record, error) {
 		if err != nil {
 			return nil, err
 		}
-
-		rows, err := f.GetRows(f.GetSheetName(1))
+		rows, err := f.GetRows(f.GetSheetName(0))
 		if err != nil {
 			return nil, err
 		}
-
 		headers := rows[0]
 		for _, row := range rows[1:] {
 			record := make(Record)
@@ -94,49 +92,24 @@ func readRecords(inputFile string) ([]Record, error) {
 	default:
 		return nil, fmt.Errorf("unsupported input file format")
 	}
-
 	return records, nil
 }
-
-func writeJSON(records []Record, outputFile string) error {
-	file, err := os.Create(outputFile)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	encoder := json.NewEncoder(file)
-	// with indentation
-	encoder.SetIndent("", "  ")
-	return encoder.Encode(records)
-}
-
-func writeMarkdown(records []Record, outputFile string) error {
-	file, err := os.Create(outputFile)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	if len(records) == 0 {
-		return nil
-	}
-
+func buildMarkdown(records []Record) ([]byte, error) {
+	var buf strings.Builder
 	headers := make([]string, 0, len(records[0]))
 	for header := range records[0] {
 		headers = append(headers, header)
 	}
 
-	file.WriteString("| " + strings.Join(headers, " | ") + " |\n")
-	file.WriteString("| " + strings.Repeat("--- |", len(headers)) + "\n")
+	buf.WriteString("| " + strings.Join(headers, " | ") + " |\n")
+	buf.WriteString("| " + strings.Repeat("--- |", len(headers)) + "\n")
 
 	for _, record := range records {
 		row := make([]string, len(headers))
 		for i, header := range headers {
 			row[i] = record[header]
 		}
-		file.WriteString("| " + strings.Join(row, " | ") + " |\n")
+		buf.WriteString("| " + strings.Join(row, " | ") + " |\n")
 	}
-
-	return nil
+	return []byte(buf.String()), nil
 }
